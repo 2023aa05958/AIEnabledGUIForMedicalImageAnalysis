@@ -1,4 +1,5 @@
 from io import BytesIO
+import json
 
 import litserve as ls
 import numpy as np
@@ -8,49 +9,23 @@ from PIL import Image
 from . import LangSAM
 from .utils import draw_image
 
-PORT = 8000
+PORT = 8001
 
 
 class LangSAMAPI(ls.LitAPI):
     def setup(self, device: str) -> None:
         """Initialize or load the LangSAM model."""
-        # 🧠 Use your custom trained brain tumor model
-        self.model = LangSAM("brain_tumor_sam_vit_base")  # Your trained brain tumor model
+        # 🚀 Default SAM 2.1 model (supports dynamic switching)
+        self.model = LangSAM("brain_tumour_sam2")  # Default SAM 2.1
         
         # Alternative options:
-        # Option 1: Default SAM 2.1
-        # self.model = LangSAM("sam2.1_hiera_small")  # Default SAM 2.1
+        # Option 1: Brain tumor model (if you need medical specialization)
+        # self.model = LangSAM("brain_tumor_sam_vit_base")  # Your trained brain tumor model
         
         # Option 2: Explicit path to your brain tumor model (if needed)
-        # self.model = LangSAM(sam_type="sam2.1_hiera_small", ckpt_path="./src/libs/sam_libs/models/model_weights/brain_tumor_sam_vit_base50.pth", device=device)
+        # self.model = LangSAM(sam_type="brain_tumour_sam2", ckpt_path="./src/libs/sam_libs/models/model_weights/brain_tumor_sam_vit_base50.pth", device=device)
         
-        print("🧠 Brain tumor SAM model initialized for medical image annotation.")
-    
-    def _boxes_overlap(self, box1, box2, threshold=0.1):
-        """Check if two bounding boxes overlap significantly"""
-        # box1 and box2 are in format [x1, y1, x2, y2]
-        x1_1, y1_1, x2_1, y2_1 = box1
-        x1_2, y1_2, x2_2, y2_2 = box2
-        
-        # Calculate intersection
-        x1_int = max(x1_1, x1_2)
-        y1_int = max(y1_1, y1_2)
-        x2_int = min(x2_1, x2_2)
-        y2_int = min(y2_1, y2_2)
-        
-        if x2_int <= x1_int or y2_int <= y1_int:
-            return False  # No intersection
-        
-        # Calculate areas
-        intersection_area = (x2_int - x1_int) * (y2_int - y1_int)
-        box1_area = (x2_1 - x1_1) * (y2_1 - y1_1)
-        box2_area = (x2_2 - x1_2) * (y2_2 - y1_2)
-        
-        # Calculate IoU (Intersection over Union)
-        union_area = box1_area + box2_area - intersection_area
-        iou = intersection_area / union_area if union_area > 0 else 0
-        
-        return iou > threshold
+        print("🚀 SAM 2.1 model initialized with dynamic model switching enabled.")
     
     def _boxes_overlap(self, box1, box2, threshold=0.1):
         """Check if two bounding boxes overlap significantly"""
@@ -143,6 +118,8 @@ class LangSAMAPI(ls.LitAPI):
                 text_threshold: {inputs['text_threshold']}, \
                 text_prompt: {inputs['text_prompt']}"
         )
+        print(f"🔧 Current model type: {self.model.sam_type}")
+        print(f"🔧 Requested model type: {inputs['sam_type']}")
         
         # Check if user provided bounding box guidance
         if inputs.get('bounding_box'):
@@ -151,15 +128,38 @@ class LangSAMAPI(ls.LitAPI):
         else:
             print("🌐 Full image analysis (no user bounding box guidance)")
 
-        # Handle model type switching (only for compatible models)
+        # Handle dynamic model type switching
         if inputs["sam_type"] != self.model.sam_type:
-            if inputs["sam_type"] == "brain_tumor_sam_vit_base":
-                print("⚠️  Cannot switch to brain tumor model dynamically. Using current model.")
-            elif self.model.sam_type == "brain_tumor_sam_vit_base":
-                print("⚠️  Cannot switch from brain tumor model dynamically. Using brain tumor model.")
-            else:
-                print(f"Updating SAM model type to {inputs['sam_type']}")
-                self.model.sam.build_model(inputs["sam_type"])
+            print(f"🔄 Switching SAM model from {self.model.sam_type} to {inputs['sam_type']}")
+            try:
+                # Handle different model switching methods based on model type
+                if inputs["sam_type"] == "brain_tumor_sam_vit_base":
+                    # Switch TO brain tumor model
+                    print("🧠 Switching to specialized brain tumor model...")
+                    self.model = LangSAM("brain_tumor_sam_vit_base")
+                    print("✅ Brain tumor model loaded successfully")
+                
+                elif self.model.sam_type == "brain_tumor_sam_vit_base":
+                    # Switch FROM brain tumor model to standard SAM
+                    print("🚀 Switching from brain tumor model to standard SAM...")
+                    self.model = LangSAM(inputs["sam_type"])
+                    print(f"✅ Standard SAM model {inputs['sam_type']} loaded successfully")
+                
+                else:
+                    # Standard SAM model switching
+                    print("🔧 Switching between standard SAM models...")
+                    if hasattr(self.model.sam, 'build_model'):
+                        self.model.sam.build_model(inputs["sam_type"])
+                        print(f"✅ Model switched to {inputs['sam_type']} successfully")
+                    else:
+                        # Fallback: reinitialize the entire model
+                        self.model = LangSAM(inputs["sam_type"])
+                        print(f"✅ Model reinitialized to {inputs['sam_type']} successfully")
+                        
+            except Exception as e:
+                print(f"⚠️  Failed to switch model: {e}")
+                print(f"🔧 Continuing with current model: {self.model.sam_type}")
+                print(f"💡 If switching to brain tumor model fails, ensure the model weights are available")
 
         try:
             image_pil = Image.open(BytesIO(inputs["image_bytes"])).convert("RGB")
@@ -254,45 +254,218 @@ class LangSAMAPI(ls.LitAPI):
             print("No detections after filtering. Returning original image.")
             return {"output_image": image_pil}
         
-        # Convert boxes to numpy array if it's a list
+        # **SAVE ALL MASKS: Save all generated masks before selecting the smallest bounding box**
+        if len(results["masks"]) > 0:
+            print(f"💾 Saving all {len(results['masks'])} generated masks before selection...")
+            
+            # Create directory for saving all masks
+            import os
+            from datetime import datetime
+            all_masks_dir = os.path.join(os.path.dirname(__file__), "..", "..", "images", "all_masks")
+            os.makedirs(all_masks_dir, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            for i, (mask, box, score, label) in enumerate(zip(results["masks"], results["boxes"], results["scores"], results["labels"])):
+                # Save individual mask as image
+                mask_array = np.array(mask)
+                mask_img = Image.fromarray((mask_array * 255).astype(np.uint8))
+                
+                # Create descriptive filename with metadata
+                area = (box[2] - box[0]) * (box[3] - box[1])
+                mask_filename = f"mask_{timestamp}_det{i+1}_area{area:.0f}_score{score:.3f}_label{label}.png"
+                mask_path = os.path.join(all_masks_dir, mask_filename)
+                mask_img.save(mask_path)
+                
+                print(f"   💾 Saved mask {i+1}: {mask_filename}")
+                print(f"       Box: {box}, Area: {area:.1f} pixels², Score: {score:.3f}, Label: {label}")
+            
+            print(f"✅ All masks saved to: {all_masks_dir}")
+        
+        # **SMALLEST BOUNDING BOX SELECTION: If multiple detections, select the one with smallest area**
+        if len(results["masks"]) > 1 and len(results["boxes"]) == len(results["masks"]):
+            print(f"🎯 Step 4: Selecting smallest bounding box from {len(results['boxes'])} detections...")
+            
+            # Calculate area for each bounding box: (x2-x1)*(y2-y1)
+            areas = [(box[2] - box[0]) * (box[3] - box[1]) for box in results["boxes"]]
+            min_idx = areas.index(min(areas))
+            
+            print(f"📊 Bounding box areas:")
+            for i, (box, area) in enumerate(zip(results["boxes"], areas)):
+                status = "← SELECTED" if i == min_idx else ""
+                print(f"   Detection {i+1}: {box} → {area:.1f} pixels² {status}")
+            
+            # Create directory for saving selected masks
+            import os
+            from datetime import datetime
+            mask_dir = os.path.join(os.path.dirname(__file__), "..", "..", "images", "annotated")
+            os.makedirs(mask_dir, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Select only the detection with smallest bounding box
+            selected_masks = [results["masks"][min_idx]]
+            selected_boxes = [results["boxes"][min_idx]]
+            selected_labels = [results["labels"][min_idx]]
+            selected_scores = [results["scores"][min_idx]]
+            
+            # Save the selected mask for debugging
+            mask_array = selected_masks[0]
+            mask_img = Image.fromarray((mask_array * 255).astype(np.uint8))
+            mask_filename = f"selected_smallest_mask_{timestamp}.png"
+            mask_path = os.path.join(mask_dir, mask_filename)
+            mask_img.save(mask_path)
+            print(f"💾 Saved selected smallest mask to: {mask_path}")
+            
+            # Update results to contain only the selected detection
+            results = {
+                "masks": selected_masks,
+                "boxes": selected_boxes,
+                "labels": selected_labels,
+                "scores": selected_scores
+            }
+            
+            print(f"✅ Selected detection {min_idx+1} with smallest area: {areas[min_idx]:.1f} pixels²")
+        else:
+            print(f"ℹ️  Only {len(results['masks'])} detection(s) found - using all detections")
+        
+        # **ARRAY VALIDATION: Ensure all results are proper numpy arrays with correct shapes**
+        # Convert masks to numpy array
+        if isinstance(results["masks"], list):
+            results["masks"] = np.array(results["masks"])
+        
+        # Convert and validate boxes
         if isinstance(results["boxes"], list):
             boxes_array = np.array(results["boxes"])
         else:
             boxes_array = results["boxes"]
-            
-        # Convert scores to numpy array if it's a list
+        
+        if boxes_array.ndim != 2 or boxes_array.shape[1] != 4:
+            print(f"⚠️  Invalid bounding box shape: {boxes_array.shape}. Returning original image.")
+            return {"output_image": image_pil}
+        results["boxes"] = boxes_array
+        
+        # Convert and validate labels
+        if isinstance(results["labels"], list):
+            labels_array = np.array(results["labels"])
+        else:
+            labels_array = results["labels"]
+        
+        if labels_array.ndim != 1:
+            labels_array = labels_array.flatten()
+        results["labels"] = labels_array
+        
+        # Convert and validate scores
         if isinstance(results["scores"], list):
             scores_array = np.array(results["scores"])
         else:
             scores_array = results["scores"]
+        
+        if scores_array.ndim != 1:
+            scores_array = scores_array.flatten()
+        results["scores"] = scores_array
+        
+        print(f"✅ Array validation completed - all results converted to proper numpy arrays")
 
         # Draw results on the image
         image_array = np.asarray(image_pil)
+        
+        # Debug: Check what we're passing to draw_image
+        print(f"🔍 Drawing debug info:")
+        print(f"   - Number of masks: {len(results['masks']) if results.get('masks') is not None and hasattr(results['masks'], '__len__') else 0}")
+        print(f"   - Number of boxes: {len(results['boxes']) if hasattr(results['boxes'], '__len__') else 'N/A'}")
+        print(f"   - Number of scores: {len(results['scores']) if hasattr(results['scores'], '__len__') else 'N/A'}")
+        print(f"   - Number of labels: {len(results['labels']) if results.get('labels') is not None and hasattr(results['labels'], '__len__') else 0}")
+        
+        if results.get("masks") is not None and hasattr(results["masks"], '__len__') and len(results["masks"]) > 0:
+            mask_sample = results["masks"][0]
+            print(f"   - First mask shape: {mask_sample.shape if hasattr(mask_sample, 'shape') else 'No shape'}")
+            print(f"   - First mask type: {type(mask_sample)}")
+            if hasattr(mask_sample, 'shape') and len(mask_sample.shape) >= 2:
+                print(f"   - First mask dimensions: {mask_sample.shape[0]}x{mask_sample.shape[1]}")
+                print(f"   - First mask data type: {mask_sample.dtype if hasattr(mask_sample, 'dtype') else 'No dtype'}")
+                print(f"   - First mask min/max values: {mask_sample.min():.3f}/{mask_sample.max():.3f}" if hasattr(mask_sample, 'min') else 'No min/max')
+        
+        # Calculate IoU scores for the segmentation masks
+        iou_scores = []
+        total_mask_area = 0
+        
+        if results.get("masks") is not None and hasattr(results["masks"], '__len__') and len(results["masks"]) > 0:
+            for i, mask in enumerate(results["masks"]):
+                if hasattr(mask, 'sum'):
+                    mask_area = float(mask.sum())
+                    total_mask_area += mask_area
+                    
+                    # Calculate IoU with the detection box if available
+                    if results.get("boxes") is not None and i < len(results["boxes"]):
+                        box = results["boxes"][i]
+                        box_area = (box[2] - box[0]) * (box[3] - box[1])
+                        
+                        # Simple IoU estimation: mask area / box area
+                        iou_estimate = min(mask_area / box_area, 1.0) if box_area > 0 else 0.0
+                        iou_scores.append(iou_estimate)
+                    else:
+                        iou_scores.append(0.0)
+                else:
+                    iou_scores.append(0.0)
+        
+        # Calculate overall IoU score
+        avg_iou = sum(iou_scores) / len(iou_scores) if iou_scores else 0.0
+        
+        print(f"📊 IoU Analysis:")
+        print(f"   - Individual IoU scores: {[f'{score:.3f}' for score in iou_scores]}")
+        print(f"   - Average IoU: {avg_iou:.3f}")
+        print(f"   - Total mask area: {total_mask_area:.1f} pixels")
+
         output_image = draw_image(
             image_array,
             results["masks"],
-            boxes_array,
-            scores_array,
+            results["boxes"],
+            results["scores"],
             results["labels"],
         )
         output_image = Image.fromarray(np.uint8(output_image)).convert("RGB")
 
-        return {"output_image": output_image}
+        return {
+            "output_image": output_image,
+            "iou_score": float(avg_iou),
+            "mask_area": float(total_mask_area),
+            "num_detections": len(results["masks"]) if results.get("masks") is not None and hasattr(results["masks"], '__len__') else 0
+        }
 
     def encode_response(self, output: dict) -> Response:
         """Encode the prediction result into an HTTP response.
 
         Returns:
-            Response: Contains the processed image in PNG format.
+            Response: Contains JSON with image data and metrics.
         """
         try:
             image = output["output_image"]
             buffer = BytesIO()
             image.save(buffer, format="PNG")
             buffer.seek(0)
+            
+            # Encode image as base64 for JSON response
+            import base64
+            image_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            
+            response_data = {
+                "image": image_b64,
+                "iou_score": float(output.get("iou_score", 0.0)),
+                "mask_area": float(output.get("mask_area", 0.0)),
+                "num_detections": int(output.get("num_detections", 0))
+            }
+            
+            return Response(
+                content=json.dumps(response_data),
+                media_type="application/json"
+            )
+        except Exception as e:
+            print(f"❌ Error encoding response: {e}")
+            # Fallback to image-only response
+            image = output["output_image"]
+            buffer = BytesIO()
+            image.save(buffer, format="PNG")
+            buffer.seek(0)
             return Response(content=buffer.getvalue(), media_type="image/png")
-        except StopIteration:
-            raise ValueError("No output generated by the prediction.")
 
 
 lit_api = LangSAMAPI()
