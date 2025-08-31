@@ -9,26 +9,26 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 from .utils import DEVICE
 
 SAM_MODELS = {
-    "sam2.1_hiera_tiny": {
-        "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
-        "config": "configs/sam2.1/sam2.1_hiera_t.yaml",
-    },
-    "sam2.1_hiera_small": {
+    #"sam2.1_hiera_tiny": {
+    #    "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+    #    "config": "configs/sam2.1/sam2.1_hiera_t.yaml",
+    #},
+    "brain_tumour_sam2": {
         "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
         "config": "configs/sam2.1/sam2.1_hiera_s.yaml",
     },
-    "sam2.1_hiera_base_plus": {
-        "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
-        "config": "configs/sam2.1/sam2.1_hiera_b+.yaml",
-    },
-    "sam2.1_hiera_large": {
-        "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
-        "config": "configs/sam2.1/sam2.1_hiera_l.yaml",
-    },
+    #"sam2.1_hiera_base_plus": {
+    #    "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+    #    "config": "configs/sam2.1/sam2.1_hiera_b+.yaml",
+    #},
+    #"sam2.1_hiera_large": {
+    #    "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+    #    "config": "configs/sam2.1/sam2.1_hiera_l.yaml",
+    #},
         # Add your custom trained model (SAM 2.1 architecture)
     "brain_tumor_sam_vit_base": {
         "local_path": "./libs/sam_libs/models/model_weights/brain_tumor_sam_vit_base50.pth",
-        "config": "configs/sam2.1/sam2.1_hiera_s.yaml",   # SAM 2.1 config for your model
+        "config": "configs/sam2.1/sam2.1_hiera_b+.yaml",   # SAM 2.1 config for your model
     },
 }
 
