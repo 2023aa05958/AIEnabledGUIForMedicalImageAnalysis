@@ -1,0 +1,24 @@
+# Requirements for Grounding DINO Statistics Calculator
+# Add these to your main requirements.txt or install separately
+
+# Core ML and data processing
+numpy>=1.21.0
+torch>=1.12.0
+scikit-learn>=1.0.0
+pandas>=1.3.0
+
+# Image processing
+Pillow>=8.0.0
+
+# Visualization
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Optional: For Hausdorff distance calculation
+scipy>=1.7.0
+
+# Model-specific (adjust based on your model)
+transformers>=4.20.0
+
+# File I/O
+csv  # Built-in Python module
